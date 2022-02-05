@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+
+    <title>dlst</title>
+</head>
+
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+    <script src="https://unpkg.com/vue-router/dist/vue-router.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p"
+        crossorigin="anonymous"></script>
+
+    <div class="container mt-1" id="app">
+        <div class="row align-items-start">
+            <div class="col-2">
+                <div class="list-group">
+                    <router-link class="list-group-item list-group-item-action" to="/containers">
+                        Containers
+                    </router-link>
+                    <router-link class="list-group-item list-group-item-action" to="/images">
+                        Images
+                    </router-link>
+                    <router-link class="list-group-item list-group-item-action" to="/volumes">
+                        Volumes
+                    </router-link>
+                </div>
+            </div>
+            <div class="col-10" id="data-container">
+                <router-view></router-view>
+            </div>
+        </div>
+    </div>
+</body>
+
+<script>
+    // https://stackoverflow.com/questions/10420352/converting-file-size-in-bytes-to-human-readable-string/10420404
+    function humanSize(bytes) {
+        const thresh = 1024;
+
+        if (Math.abs(bytes) < thresh) {
+            return bytes + ' B';
+        }
+
+        const dp = 2;
+        const units = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+        let u = -1;
+        const r = 10 ** dp;
+
+        do {
+            bytes /= thresh;
+            ++u;
+        } while (Math.round(Math.abs(bytes) * r) / r >= thresh && u < units.length - 1);
+
+
+        return bytes.toFixed(dp) + ' ' + units[u];
+    }
+
+    const Containers = {
+        data: function () {
+            return {
+                timeout: 2000,
+                containers: null,
+                timer: null
+            }
+        },
+        watch: {
+            $route: 'fetchData'
+        },
+        created() {
+            this.fetchData()
+        },
+        methods: {
+            startTimer() {
+                this.timer = setInterval(() => this.fetchData(), this.timeout);
+            },
+            fetchData() {
+                axios
+                    .get("/containers")
+                    .then(response => {
+                        console.log(response.data)
+                        this.containers = response.data
+                    });
+            },
+            start(id, state) {
+                let url = "/containers/start/" + id
+                if (state === "paused") {
+                    url = "/containers/unpause/" + id
+                }
+
+                axios
+                    .get(url)
+                    .then(response => {
+                        console.log(response)
+                    });
+            },
+            pause(id) {
+                axios
+                    .get("/containers/pause/" + id)
+                    .then(response => {
+                        console.log(response)
+                    });
+            },
+            stop(id) {
+                axios
+                    .get("/containers/stop/" + id)
+                    .then(response => {
+                        console.log(response)
+                    });
+            },
+            remove(id, purge) {
+                axios
+                    .get("/containers/remove/" + id + "/" + purge)
+                    .then(response => {
+                        console.log(response)
+                    });
+            },
+            badgeClassByState(state) {
+                switch (state) {
+                    case "paused":
+                        return "bg-warning"
+                    case "exited":
+                        return "bg-secondary"
+                    case "running":
+                        return "bg-success"
+                }
+
+                return "bg-info"
+            },
+            simplePort(ports) {
+                if (ports.length == 0) {
+                    return ""
+                }
+
+                let objPrivatePorts = {}
+                let objPublicPorts = {}
+                for (i = 0; i < ports.length; i++) {
+                    let info = ports[i]
+                    if (typeof (info.PublicPort) === "undefined") {
+                        objPrivatePorts[info.Type + " " + info.PrivatePort] = 0
+
+                        continue
+                    }
+
+
+                    objPublicPorts[info.Type + " " + info.PrivatePort + ":" + info.PublicPort] = 0
+                }
+
+
+                keysPrivatePorts = []
+                keysPublicPorts = []
+                for (let key in objPrivatePorts) {
+                    keysPrivatePorts.push(key);
+                }
+                for (let key in objPublicPorts) {
+                    keysPublicPorts.push(key);
+                }
+
+                if (keysPublicPorts.length > 0) {
+                    return keysPublicPorts.join(",")
+                }
+
+                return keysPrivatePorts.join(",")
+            },
+            existsPorts(ports) {
+                return this.simplePort(ports).length > 0
+            }
+        },
+        beforeRouteLeave(to, from, next) {
+            clearTimeout(this.timer);
+            next()
+        },
+        beforeRouteEnter(to, from, next) {
+            next(vm => {
+                vm.startTimer()
+            })
+        },
+        template: `
+        <table class="table table-striped">
+            <tbody>
+                <tr v-for="container in containers" :key="container.Id">
+                    <th> 
+                        {{ container.Names[0] }} 
+                        <span class="badge bg-primary" v-if="existsPorts(container.Ports)"> {{ simplePort(container.Ports) }}</span> 
+                    </th>
+                    <td> {{ container.Image }} </td>
+                    <td><span class="badge" v-bind:class="[badgeClassByState(container.State)]"> {{ container.State}} </span> </td>
+                    <td> {{container.Status}} </td>
+                    <td class="text-end">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button id="btnGroupDrop1" type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            </button>
+                            <ul class="dropdown-menu " aria-labelledby="btnGroupDrop1">
+                                <li><a class="dropdown-item" href="#" v-on:click="start(container.Id, container.State)">Start</a></li>
+                                <li><a class="dropdown-item" href="#" v-on:click="pause(container.Id)">Pause</a></li>
+                                <li><a class="dropdown-item" href="#" v-on:click="stop(container.Id)">Stop</a></li>
+                                <div class="dropdown-divider"></div>
+                                <li><a class="dropdown-item" href="#" v-on:click="remove(container.Id, false)">Remove</a></li>
+                                <li><a class="dropdown-item" href="#" v-on:click="remove(container.Id, true)">Remove&Purge</a></li>
+                            </ul>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        `
+    }
+
+    const Images = {
+        data: function () {
+            return {
+                timeout: 2000,
+                images: null,
+                timer: null
+            }
+        },
+        created() {
+            this.fetchData()
+        },
+        watch: {
+            $route: 'fetchData'
+        },
+        beforeRouteLeave(to, from, next) {
+            clearTimeout(this.timer);
+            next()
+        },
+        beforeRouteEnter(to, from, next) {
+            next(vm => {
+                vm.startTimer()
+            })
+        },
+        methods: {
+            startTimer() {
+                this.timer = setInterval(() => this.fetchData(), this.timeout);
+            },
+            repoByRepoTags(repoTags) {
+                let parts = repoTags.split(":")
+                return parts[0]
+            },
+            tagByRepoTags(repoTags) {
+                let parts = repoTags.split(":")
+                if (parts.length > 1) {
+                    return parts[parts.length - 1]
+                }
+
+                return parts[0]
+            },
+            shortId(imageId) {
+                return this.fullId(imageId).substring(0, 12)
+            },
+            fullId(imageId) {
+                let parts = imageId.split(":")
+                if (parts.length > 1) {
+                    return parts[parts.length - 1]
+                }
+
+                return parts[0]
+            },
+            fetchData() {
+                axios
+                    .get("/images")
+                    .then(response => {
+                        console.log(response.data)
+                        this.images = response.data
+                    });
+            },
+            pull(repo) {
+                axios
+                    .post("/images/pull", {
+                        "repo": repo
+                    })
+                    .then(response => {
+                        console.log(response)
+                    });
+            },
+        },
+        template: `
+        <table class="table table-striped">
+            <tbody>
+                <tr v-for="image in images" :key="image.Id">
+                    <th> 
+                        {{ repoByRepoTags(image.RepoTags[0]) }} 
+                        <span class="badge bg-primary"> {{ tagByRepoTags(image.RepoTags[0]) }}</span> 
+                    </th>
+                    <td> {{ shortId(image.Id) }} </td>               
+                    <td> {{ humanSize(image.Size) }} </td>
+                    <td class="text-end">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button id="btnGroupDrop1" type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            </button>
+                            <ul class="dropdown-menu " aria-labelledby="btnGroupDrop1">
+                                <li><a class="dropdown-item" href="#" v-on:click="pull(image.RepoDigests[0])">Pull</a></li>
+                            </ul>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        `
+    }
+    const Volumes = {
+        data: function () {
+            return {
+                timeout: 2000,
+                volumes: null,
+                timer: null
+            }
+        },
+        created() {
+            this.fetchData()
+        },
+        watch: {
+            $route: 'fetchData'
+        },
+        methods: {
+            fetchData() {
+                axios
+                    .get("/volumes")
+                    .then(response => {
+                        console.log(response.data.Volumes)
+                        this.volumes = response.data.Volumes
+                    });
+            },
+        },
+        template: `
+        <table class="table table-striped">
+            <tbody>
+                <tr v-for="volume in volumes" :key="volume.Name">
+                    <td> {{ volume.Name }} </td>
+                    <td> {{ volume.Size }} </td>
+                </tr>
+            </tbody>
+        </table>
+        `
+    }
+
+    const routes = [
+        { path: '/', redirect: '/containers' },
+        { path: '/containers', component: Containers },
+        { path: '/images', component: Images },
+        { path: '/volumes', component: Volumes }
+    ]
+
+    const router = new VueRouter({
+        routes // сокращённая запись для `routes: routes`
+    })
+
+    const app = new Vue({
+        router
+    }).$mount('#app')
+</script>
+
+</html>
