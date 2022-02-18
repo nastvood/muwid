@@ -11,7 +11,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/nastvood/muwid/internals/util"
+	"github.com/nastvood/muwid/internal/util"
 )
 
 func list(ctx context.Context, cli *client.Client) http.HandlerFunc {

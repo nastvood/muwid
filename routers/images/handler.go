@@ -10,7 +10,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/go-chi/render"
 
-	"github.com/nastvood/muwid/internals/util"
+	"github.com/nastvood/muwid/internal/util"
 )
 
 type pullRequest struct {
